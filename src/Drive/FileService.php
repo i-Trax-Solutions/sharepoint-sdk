@@ -106,7 +106,15 @@ class FileService
     {
         $url = $this->getFileBaseUrl($path, $itemId, '/content');
 
-        return $this->apiConnector->request('GET', $url);
+        $result = $this->apiConnector->request('GET', $url);
+
+        // Ensure we always return a string — ApiConnector may return an array
+        // if the response was incorrectly decoded as JSON
+        if (is_string($result)) {
+            return $result;
+        }
+
+        return json_encode($result);
     }
 
     /**

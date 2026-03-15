@@ -1,16 +1,23 @@
 {
-  "name": "gwsn/sharepoint-sdk",
-  "description": "Connect to sharepoint drive with PHP",
+  "name": "itrax-solutions/sharepoint-sdk",
+  "description": "Connect to SharePoint drive with PHP (fork of gwsn/sharepoint-sdk with binary download fix)",
   "license": "MIT",
-  "homepage": "https://github.com/gwsn/sharepoint-sdk",
+  "homepage": "https://github.com/i-Trax-Solutions/sharepoint-sdk",
   "keywords": [
     "flysystem",
-    "sharepoint"
+    "sharepoint",
+    "microsoft-graph"
   ],
   "authors": [
     {
       "name": "Global Web Systems B.V.",
-      "homepage": "https://www.globalwebsystems.nl"
+      "homepage": "https://www.globalwebsystems.nl",
+      "role": "Original Author"
+    },
+    {
+      "name": "i-Trax Solutions Inc.",
+      "homepage": "https://www.i-trax.solutions",
+      "role": "Fork Maintainer"
     }
   ],
   "require": {

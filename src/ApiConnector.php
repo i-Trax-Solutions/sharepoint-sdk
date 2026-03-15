@@ -235,11 +235,21 @@ class ApiConnector
 
 
             if ($response->getStatusCode() >= 200 && $response->getStatusCode() < 500) {
-                // JSON Decode the response
-                $responseBody = json_decode($rawBody, true);
+                // Check Content-Type header to determine if response is JSON or binary
+                $contentType = $response->getHeaderLine('Content-Type');
+                $isJsonResponse = (
+                    stripos($contentType, 'application/json') !== false ||
+                    stripos($contentType, 'text/json') !== false
+                );
 
-                if($responseBody !== null) {
-                    return $responseBody;
+                // Only attempt JSON decode for JSON content types
+                // Binary responses (file downloads, thumbnails) must be returned as raw strings
+                if ($isJsonResponse) {
+                    $responseBody = json_decode($rawBody, true);
+
+                    if ($responseBody !== null) {
+                        return $responseBody;
+                    }
                 }
 
                 return $rawBody;

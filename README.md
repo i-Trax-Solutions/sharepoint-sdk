@@ -1,47 +1,83 @@
-# sharepoint-sdk for the Sharepoint Graph API
-Sharepoint SDK to use Sharepoint as filestorage.
+# SharePoint SDK for the Microsoft Graph API
+
+> **Fork of [gwsn/sharepoint-sdk](https://github.com/gwsn/sharepoint-sdk)** — maintained by [i-Trax Solutions Inc.](https://www.i-trax.solutions)
+
+SharePoint SDK to use SharePoint as file storage via the Microsoft Graph API.
 
 For the Flysystem adapter (Symfony and Laravel) see the flysystem package: [gwsn/flysystem-sharepoint-adapter](https://github.com/gwsn/flysystem-sharepoint-adapter)
 
-## Installation
-You can install the package via composer:
+---
 
-``` bash
-composer require gwsn/sharepoint-sdk
+## Why This Fork?
+
+The original `gwsn/sharepoint-sdk` has a critical bug in `ApiConnector::request()` that causes **binary file downloads to fail with a TypeError**.
+
+### The Bug
+
+The `request()` method unconditionally calls `json_decode()` on **all** HTTP responses, including binary file content (images, PDFs, thumbnails). When the binary content happens to parse as valid JSON (e.g., a file that starts with `[` or `{`), `json_decode()` returns an array instead of a string. This causes `FileService::readFile()` — which has a `: string` return type — to throw:
+
+```
+PHP Fatal error: Uncaught TypeError: GWSN\Microsoft\Drive\FileService::readFile():
+Return value must be of type string, array returned
 ```
 
-## First configuration to start usage
+This commonly occurs when downloading thumbnails or any non-text file via the `/content` endpoint.
 
-You need to request a new clientId and clientSecret for a new application on Azure.
+### The Fix
 
-1. Go to `Azure portal` https://portal.azure.com
-2. Go to `Azure Active Directory`
-3. Go to `App registrations`
-4. Click on `new Registration` and follow the wizard.  
-   (give it a name like mine is 'gwsn-sharepoint-connector' and make a decision on the supported accounts, single tenant should be enough but this depends on your organisation)
-5. When created the application is created write down the following details
-6. 'Application (client) id', this will be your `$clientId`
-7. 'Directory (tenant) id', this will be your `$tenantId`
-8. Then we go in the menu to the `API permissions` to set the permissions that are required
-9. The click on `Add a permission` and add the following permissions:  
-   Microsoft Graph:
-    - Files.ReadWrite.All
-    - Sites.ReadWrite.All
-    - User.Read
-10. Click on the `Grant admin consent for ...Company...`
-11. Go in the menu to `Certificates & secrets`
-12. Click on `new client secret`
-13. Give it a description and expiry date and the value will be your `$clientSecret`
-14. The last parameter will be the sharepoint 'slug', this is part of the url of the sharepoint site what you want to use and creation of sharepoint site is out of scope of this readme.  
-    When you sharepoint url is like `https://{tenant}.sharepoint.com/sites/{site-slug}/Shared%20Documents/Forms/AllItems.aspx`  
-    You need to set the `$sharepointSite` as `{site-slug}`
+1. **`ApiConnector.php`**: The `request()` method now checks the `Content-Type` response header before attempting `json_decode()`. Only responses with `application/json` or `text/json` content types are decoded. Binary responses (file downloads, thumbnails, etc.) are returned as raw strings.
 
-    Example:
-    - Sharepoint site url: `https://GWSN.sharepoint.com/sites/gwsn-documents-store/Shared%20Documents/Forms/AllItems.aspx`
-    - Sharepoint site variable:  `$sharepointSite = 'gwsn-documents-store'`
+2. **`FileService.php`**: The `readFile()` method now includes a defensive type check — if `ApiConnector::request()` returns an array (for any reason), it is re-encoded to a JSON string to satisfy the `: string` return type contract.
 
-## Basic usage with the flysystem adapter (preferred way!)
-``` php
+---
+
+## Installation
+
+Install via Composer using the GitHub repository:
+
+```json
+{
+    "repositories": [
+        {
+            "type": "vcs",
+            "url": "https://github.com/i-Trax-Solutions/sharepoint-sdk.git"
+        }
+    ],
+    "require": {
+        "itrax-solutions/sharepoint-sdk": "^1.1"
+    }
+}
+```
+
+---
+
+## Configuration
+
+You need a registered Azure AD application with the appropriate Microsoft Graph API permissions.
+
+1. Go to [Azure Portal](https://portal.azure.com)
+2. Go to **Azure Active Directory** → **App registrations**
+3. Click **New Registration** and follow the wizard (single tenant is typically sufficient)
+4. Note down:
+   - **Application (client) ID** → `$clientId`
+   - **Directory (tenant) ID** → `$tenantId`
+5. Go to **API permissions** → **Add a permission** → **Microsoft Graph**:
+   - `Files.ReadWrite.All`
+   - `Sites.ReadWrite.All`
+   - `User.Read`
+6. Click **Grant admin consent**
+7. Go to **Certificates & secrets** → **New client secret** → the value is your `$clientSecret`
+8. Determine your SharePoint site slug from the URL:
+   - URL: `https://{tenant}.sharepoint.com/sites/{site-slug}/Shared%20Documents/Forms/AllItems.aspx`
+   - Variable: `$sharepointSite = '{site-slug}'`
+
+---
+
+## Usage
+
+### With Flysystem Adapter (Preferred)
+
+```php
 use GWSN\FlysystemSharepoint\FlysystemSharepointAdapter;
 use GWSN\FlysystemSharepoint\SharepointConnector;
 use League\Flysystem\Filesystem;
@@ -49,178 +85,108 @@ use League\Flysystem\Filesystem;
 $tenantId = 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx';
 $clientId = 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx';
 $clientSecret = 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx';
-$sharepointSite = 'your-path-to-your-site';
+$sharepointSite = 'your-site-slug';
 
 $connector = new SharepointConnector($tenantId, $clientId, $clientSecret, $sharepointSite);
-
-$prefix = '/test'; // optional
-$adapter = new FlysystemSharepointAdapter($connector, $prefix);
-
-
+$adapter = new FlysystemSharepointAdapter($connector, '/optional-prefix');
 $flysystem = new Filesystem($adapter);
 ```
 
-## Basic needs to be able to use the folder|drive|file service
-``` php
+### Direct Service Usage
 
+```php
 use GWSN\Microsoft\Authentication\AuthenticationService;
 use GWSN\Microsoft\Drive\DriveService;
 use GWSN\Microsoft\Drive\FileService;
 use GWSN\Microsoft\Drive\FolderService;
-use GWSN\Microsoft\Sharepoint\SharepointService;
 
-// Not needed if you use a framework with dependency injection !
 require dirname(dirname(__DIR__)) . '/vendor/autoload.php';
 
 $tenantId = 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx';
 $clientId = 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx';
 $clientSecret = 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx';
+$sharepointSite = 'your-site-slug';
 
-$sharepointSite = 'your-path-to-your-site';
-
-// Login into MS oauth and fetch new access token
-// In real application please save the access token and use it until it expires
+// Authenticate
 $authService = new AuthenticationService();
 $accessToken = $authService->getAccessToken($tenantId, $clientId, $clientSecret);
 ```
 
-## Usage for managing for Sharepoint drives
-  
-include the basic usage and add the following code
-``` php
-    // Initialize the drive
-    $spDrive = new DriveService($accessToken);
-    $driveId = $spDrive->requestDriveId($siteId);
-    $spDrive->setDriveId($driveId);
-    
-     // Check if Resource exists
-    try {
-        $result = $spDrive->checkResourceExists('/test');
-        var_dump($result);
-        $result = $spDrive->checkResourceExists('/testDoc.docx');
-        var_dump($result);
-    } catch (\Exception $exception) {
-        var_dump($exception->getMessage());
-    }
+### Drive Operations
 
-    // move file /test.txt to folder /test and rename it to testje.txt
-    $result = $spFileService->moveFile('/test.txt', '/test', 'testje.txt');
-    
-    // check if it still exists
-    $result = $spDrive->checkResourceExists('/test.txt');
-    var_dump($result);
-    
-    // check if new file exists
-    $result = $spDrive->checkResourceExists('/test/testje.txt');
-    var_dump($result);
-    
+```php
+$spDrive = new DriveService($accessToken);
+$driveId = $spDrive->requestDriveId($siteId);
+$spDrive->setDriveId($driveId);
+
+// Check if a resource exists
+$exists = $spDrive->checkResourceExists('/test');
+$exists = $spDrive->checkResourceExists('/testDoc.docx');
 ```
 
-## Usage for managing Sharepoint folders
+### Folder Operations
 
-include the basic usage and add the following code
-``` php
-try {
-    // Initialize the drive
-    $spDrive = new DriveService($accessToken);
-    $driveId = $spDrive->requestDriveId($siteId);
-    $spDrive->setDriveId($driveId);
-   
-    // Create the folderService
-    $spFolderService = new FolderService($accessToken, $driveId);
-        
-    // Get files from sharepoint folder
-    $listRootDirResult = $spFolderService->requestFolderItems('/');
+```php
+$spFolderService = new FolderService($accessToken, $driveId);
 
-    // Check if Folder exists
-    $spFolderService->checkFolderExists('/test');
-    
-    // Get files from sharepoint sub folder
-    $listRootDirResult = $spFolderService->requestFolderItems('/test');
-    
-    // Get Folder from sharepoint
-    $spFolderService->createFolderRecursive('/dummy/test');
+// List folder contents
+$items = $spFolderService->requestFolderItems('/');
+$items = $spFolderService->requestFolderItems('/subfolder');
 
-    // Delete Folder from sharepoint we just created
-    $spFolderService->deleteFolder('/dummy/test');
-    $spFolderService->deleteFolder('/dummy');
-    
-    // Check if Folder exists while its a file
-    try {
-        $result = $spFolderService->checkFolderExists('/testDoc.docx');
-        var_dump($result);
-    } catch (\Exception $exception) {
-        var_dump($exception->getMessage());
-    }
-    
-} catch (\Exception $exception) {
-    var_dump($exception->getMessage());
-}
+// Check if folder exists
+$spFolderService->checkFolderExists('/test');
+
+// Create folders recursively
+$spFolderService->createFolderRecursive('/path/to/folder');
+
+// Delete folder
+$spFolderService->deleteFolder('/path/to/folder');
 ```
 
-## Usage for files in Sharepoint drives
-  
-include the basic usage and add the following code
-``` php
-    // FileService
-    $spFileService = new FileService($accessToken, $driveId);
+### File Operations
 
-    // write file to directory
-    $result = $spFileService->writeFile('/test.txt', 'testContent');
-    var_dump(isset($result['id']));
+```php
+$spFileService = new FileService($accessToken, $driveId);
 
-    // read file from directory
-    $content = $spFileService->readFile('/test.txt');
-    var_dump(($content === 'testContent'));
+// Write a file
+$result = $spFileService->writeFile('/test.txt', 'file content here');
 
-    // write file to directory
-    $result = $spFileService->writeFile('/test/docje.txt', 'testContent');
-    var_dump(isset($result['id']));
+// Read a file (returns string content — binary safe)
+$content = $spFileService->readFile('/test.txt');
 
-    // read file from directory
-    $content = $spFileService->readFile('/test/docje.txt');
-    var_dump(($content === 'testContent'));
-   
+// Move a file
+$result = $spFileService->moveFile('/test.txt', '/destination', 'newname.txt');
 
-    // move file
-    $result = $spFileService->moveFile('/test.txt', '/test', 'testje.txt');
-    $result = $spDrive->checkResourceExists('/test.txt');
-    var_dump($result);
-    $result = $spDrive->checkResourceExists('/test/testje.txt');
-    var_dump($result);
+// Copy a file
+$result = $spFileService->copyFile('/source.txt', '/destination', 'copy.txt');
 
-    // copy file
-    $result = $spFileService->copyFile('/test/testje.txt', '/', 'toBeDeleted.txt');
-    var_dump($result);
-    // copy dir
-    $result = $spFileService->copyFile('/test', '/test2');
-    var_dump($result);
-
-
-    // delete file from directory
-    $content = $spFileService->deleteFile('/test/testje.txt');
-    var_dump($content);
-    $content = $spFileService->deleteFile('/test/docje.txt');
-    var_dump($content);
-    $content = $spFileService->deleteFile('/toBeDeleted.txt');
-    var_dump($content);
-    $content = $spFileService->deleteFile('/test.txt');
-    var_dump($content);
-
+// Delete a file
+$spFileService->deleteFile('/test.txt');
 ```
 
+---
+
+## Changes from Original
+
+| Version | Change |
+|---------|--------|
+| **1.1.0** | Fixed `ApiConnector::request()` — checks `Content-Type` header before `json_decode()` to prevent binary file downloads from being incorrectly decoded as JSON. Added defensive type check in `FileService::readFile()`. |
+
+---
 
 ## Testing
 
-``` bash
-$ composer run-script test
+```bash
+composer run-script test
 ```
 
-## Security
+---
 
-If you discover any security related issues, please email info@gwsn.nl instead of using the issue tracker.
+## Credits
 
+- **Original package**: [gwsn/sharepoint-sdk](https://github.com/gwsn/sharepoint-sdk) by [Global Web Systems B.V.](https://www.globalwebsystems.nl)
+- **Fork maintained by**: [i-Trax Solutions Inc.](https://www.i-trax.solutions)
 
 ## License
 
-The MIT License (MIT). Please see [License File](LICENSE.md) for more information.
+The MIT License (MIT). Please see [License File](LICENSE) for more information.
