@@ -55,7 +55,11 @@ class AuthenticationService
         ]);
 
         if(!isset($response['token_type'], $response['expires_in'], $response['ext_expires_in'], $response['access_token'])) {
-            throw new \Exception('Microsoft Authenticate Request: Cannot parse the body of the authentication request', 500);
+            $errorDetails = is_array($response) ? json_encode($response) : (string)$response;
+            throw new \Exception(
+                'Microsoft Authenticate Request: Cannot parse the body of the authentication request. Response: ' . $errorDetails,
+                500
+            );
         }
 
         $this->apiConnector->setBearerToken($response['access_token']);

@@ -20,7 +20,7 @@ class ApiConnector
 
 
     public function __construct(
-        string $accessToken = null,
+        ?string $accessToken = null,
         int $requestTimeout = 60,
         bool $verify = true
     )
@@ -264,7 +264,12 @@ class ApiConnector
             throw new Exception($errorMsg, $exception->getResponse()->getStatusCode(), $exception);
 
         } catch (GuzzleException|Exception $exception) {
-            throw new Exception(sprintf('Microsoft Graph Request: request to %s KO', $url), 500, $exception);
+            $errorMsg = sprintf(
+                'Microsoft Graph Request: request to %s KO. Client error: %s',
+                $url,
+                $exception->getMessage()
+            );
+            throw new Exception($errorMsg, 500, $exception);
         }
     }
 }
