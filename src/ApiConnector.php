@@ -20,7 +20,7 @@ class ApiConnector
 
 
     public function __construct(
-        string $accessToken = null,
+        ?string $accessToken = null,
         int $requestTimeout = 60,
         bool $verify = true
     )
